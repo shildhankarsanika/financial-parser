@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-# Import ReportLab elements for clean PDF generation
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -63,9 +62,46 @@ async def convert_image(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image file uploaded.")
 
-    # Query LLM
+    model_name = os.getenv("OPEN_SOURCE_MODEL", "qwen2.5vl:7b")
+
+    # 🛑 SPECIAL PATH FOR PLAIN TEXT RAW EXTRACTION
+    if output_format == "txt":
+        print("📄 [TXT ENGINE] Querying LLM for clean raw paragraph extraction...", flush=True)
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text", 
+                                "text": "Transcribe all the text found in this image naturally exactly as it reads. Do not arrange it into structured data table blocks, column keys, or markdown grids. Just output the clean continuous text line-by-line as read from left to right."
+                            },
+                            {
+                                "type": "image_url", 
+                                "image_url": {"url": image_url}
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1
+            )
+            raw_text = response.choices[0].message.content
+            print("🏁 [SUCCESS] Clean raw transcription captured successfully.", flush=True)
+            
+            return StreamingResponse(
+                io.BytesIO(raw_text.encode('utf-8')),
+                media_type="text/plain",
+                headers={"Content-Disposition": "attachment; filename=extracted_data.txt"}
+            )
+        except Exception as e:
+            print(f"❌ [CRITICAL ERROR] TXT translation failed: {str(e)}", flush=True)
+            raise HTTPException(status_code=500, detail=f"Text extraction failure: {str(e)}")
+
+    # 📦 TABULAR DATA PATH (JSON, CSV, XLSX, PDF)
     try:
-        model_name = os.getenv("OPEN_SOURCE_MODEL", "qwen2.5vl:7b")
+        print("📊 [TABLE ENGINE] Querying LLM for strict schema mapping...", flush=True)
         response = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -95,13 +131,13 @@ async def convert_image(
         
         raw_json = response.choices[0].message.content
         parsed_data = ExtractedTable.model_validate(json.loads(raw_json))
-        print(f"📊 [VALIDATION] Extracted Rows: {len(parsed_data.rows)}", flush=True)
+        print(f"📊 [VALIDATION] Extracted Grid Rows: {len(parsed_data.rows)}", flush=True)
         
     except Exception as e:
-        print(f"❌ [CRITICAL ERROR] Ollama failed: {str(e)}", flush=True)
+        print(f"❌ [CRITICAL ERROR] Table generation crashed: {str(e)}", flush=True)
         raise HTTPException(status_code=500, detail=f"Extraction failure: {str(e)}")
 
-    # Map data to DataFrame
+    # Structure DataFrame
     raw_rows = []
     for r in parsed_data.rows:
         raw_rows.append([r.column_a, r.column_b, r.column_c, r.column_d])
@@ -113,7 +149,6 @@ async def convert_image(
 
     df = pd.DataFrame(raw_rows, columns=headers)
 
-    # OUTPUT FORMAT HANDLING
     if output_format == "json":
         return parsed_data.model_dump()
         
@@ -137,23 +172,7 @@ async def convert_image(
             headers={"Content-Disposition": "attachment; filename=extracted_data.xlsx"}
         )
 
-    elif output_format == "txt":
-        print("📄 [EXPORT] Generating clean text output stream...", flush=True)
-        stream = io.StringIO()
-        stream.write(f"=== {parsed_data.table_title.upper()} ===\n\n")
-        stream.write(" | ".join(headers) + "\n")
-        stream.write("-" * 50 + "\n")
-        for row in raw_rows:
-            stream.write(" | ".join([str(item) for item in row]) + "\n")
-        
-        return StreamingResponse(
-            io.BytesIO(stream.getvalue().encode('utf-8')),
-            media_type="text/plain",
-            headers={"Content-Disposition": "attachment; filename=extracted_data.txt"}
-        )
-
     elif output_format == "pdf":
-        print("📄 [EXPORT] Generating formatted PDF document...", flush=True)
         pdf_buffer = io.BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
         story = []
@@ -163,16 +182,13 @@ async def convert_image(
         cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=9, leading=11)
         header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=10, bold=True, textColor=colors.white)
 
-        # Title
         story.append(Paragraph(parsed_data.table_title or "Extracted Financial Report", title_style))
         story.append(Spacer(1, 10))
         
-        # Build Table Data with text-wrapping wrappers
         table_data = [[Paragraph(f"<b>{h}</b>", header_style) for h in headers]]
         for row in raw_rows:
             table_data.append([Paragraph(str(cell), cell_style) for cell in row])
         
-        # Format layout boundaries
         pdf_table = Table(table_data, colWidths=[135, 135, 135, 135])
         pdf_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0070f3")),

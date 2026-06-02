@@ -1,11 +1,8 @@
-{"timestamp":"00:00:00.769","source":"Server","level":"LOG","message":""}
-{"timestamp":"00:00:01.915","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:00:09.646","source":"Browser","level":"LOG","message":"📁 [FRONTEND LOG] Staged: testocr.png"}
-{"timestamp":"00:00:13.382","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
-{"timestamp":"00:01:01.455","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.txt"}
-{"timestamp":"00:01:51.656","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
-{"timestamp":"00:02:07.430","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.xlsx"}
-{"timestamp":"00:04:43.645","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
-{"timestamp":"00:04:59.456","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.pdf"}
-{"timestamp":"00:05:55.079","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
-{"timestamp":"00:06:12.464","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.json"}
+{"timestamp":"00:00:00.906","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:01.771","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:22.105","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:29.257","source":"Browser","level":"LOG","message":"📁 [FRONTEND LOG] Staged: testocr.png"}
+{"timestamp":"00:00:32.060","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
+{"timestamp":"00:02:42.215","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.txt"}
+{"timestamp":"00:03:19.726","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
+{"timestamp":"00:04:21.208","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.json"}
