@@ -6,3 +6,11 @@
 {"timestamp":"00:02:42.215","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.txt"}
 {"timestamp":"00:03:19.726","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
 {"timestamp":"00:04:21.208","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.json"}
+{"timestamp":"00:06:21.643","source":"Browser","level":"LOG","message":"📁 [FRONTEND LOG] Staged: 1-5-1024x576.webp"}
+{"timestamp":"00:06:28.977","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
+{"timestamp":"00:08:28.205","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.pdf"}
+{"timestamp":"00:09:36.165","source":"Browser","level":"LOG","message":"🚀 [FRONTEND LOG] Running conversion pipeline..."}
+{"timestamp":"00:11:24.458","source":"Browser","level":"LOG","message":"🏁 [FRONTEND LOG] Finished exporting extracted_data.txt"}
+{"timestamp":"00:13:17.934","source":"Server","level":"LOG","message":"✓ Compiled in 15ms"}
+{"timestamp":"00:14:06.881","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:14:15.673","source":"Browser","level":"LOG","message":"📁 [FRONTEND LOG] Staged: 1-5-1024x576.webp"}

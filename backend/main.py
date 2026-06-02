@@ -52,21 +52,19 @@ async def convert_image(
     file: UploadFile = File(...),
     output_format: str = Form(...) 
 ):
-    print("\n🚀 [START] --- NEW CONVERSION REQUEST RECEIVED ---", flush=True)
-    print(f"⚙️ [FORMAT] Target requested output format: {output_format.upper()}", flush=True)
+    print(f"\n🚀 [API ENGINE] Inbound context conversion started -> Target Format: {output_format.upper()}", flush=True)
 
     try:
         image_bytes = await file.read()
         encoded_image = base64.b64encode(image_bytes).decode('utf-8')
         image_url = f"data:{file.content_type};base64,{encoded_image}"
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image file uploaded.")
+        raise HTTPException(status_code=400, detail="Invalid image encoding sequence encountered.")
 
     model_name = os.getenv("OPEN_SOURCE_MODEL", "qwen2.5vl:7b")
 
-    # 🛑 SPECIAL PATH FOR PLAIN TEXT RAW EXTRACTION
+    # TXT Pipeline
     if output_format == "txt":
-        print("📄 [TXT ENGINE] Querying LLM for clean raw paragraph extraction...", flush=True)
         try:
             response = client.chat.completions.create(
                 model=model_name,
@@ -88,20 +86,16 @@ async def convert_image(
                 temperature=0.1
             )
             raw_text = response.choices[0].message.content
-            print("🏁 [SUCCESS] Clean raw transcription captured successfully.", flush=True)
-            
             return StreamingResponse(
                 io.BytesIO(raw_text.encode('utf-8')),
                 media_type="text/plain",
                 headers={"Content-Disposition": "attachment; filename=extracted_data.txt"}
             )
         except Exception as e:
-            print(f"❌ [CRITICAL ERROR] TXT translation failed: {str(e)}", flush=True)
-            raise HTTPException(status_code=500, detail=f"Text extraction failure: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
-    # 📦 TABULAR DATA PATH (JSON, CSV, XLSX, PDF)
+    # Structured Tabular Engine Pipeline
     try:
-        print("📊 [TABLE ENGINE] Querying LLM for strict schema mapping...", flush=True)
         response = client.chat.completions.create(
             model=model_name,
             messages=[
@@ -128,20 +122,12 @@ async def convert_image(
             response_format={"type": "json_object"},
             temperature=0.1
         )
-        
         raw_json = response.choices[0].message.content
         parsed_data = ExtractedTable.model_validate(json.loads(raw_json))
-        print(f"📊 [VALIDATION] Extracted Grid Rows: {len(parsed_data.rows)}", flush=True)
-        
     except Exception as e:
-        print(f"❌ [CRITICAL ERROR] Table generation crashed: {str(e)}", flush=True)
-        raise HTTPException(status_code=500, detail=f"Extraction failure: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # Structure DataFrame
-    raw_rows = []
-    for r in parsed_data.rows:
-        raw_rows.append([r.column_a, r.column_b, r.column_c, r.column_d])
-    
+    raw_rows = [[r.column_a, r.column_b, r.column_c, r.column_d] for r in parsed_data.rows]
     num_cols = len(raw_rows[0]) if raw_rows else 4
     headers = parsed_data.headers[:num_cols]
     while len(headers) < num_cols:
@@ -151,40 +137,27 @@ async def convert_image(
 
     if output_format == "json":
         return parsed_data.model_dump()
-        
     elif output_format == "csv":
         stream = io.StringIO()
         df.to_csv(stream, index=False)
-        return StreamingResponse(
-            io.BytesIO(stream.getvalue().encode('utf-8')), 
-            media_type="text/csv", 
-            headers={"Content-Disposition": "attachment; filename=extracted_data.csv"}
-        )
-        
+        return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8')), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=extracted_data.csv"})
     elif output_format == "xlsx":
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name="Extracted Data")
         output.seek(0)
-        return StreamingResponse(
-            output, 
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-            headers={"Content-Disposition": "attachment; filename=extracted_data.xlsx"}
-        )
-
+        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=extracted_data.xlsx"})
     elif output_format == "pdf":
         pdf_buffer = io.BytesIO()
         doc = SimpleDocTemplate(pdf_buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
         story = []
-        
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, spaceAfter=12, textColor=colors.HexColor("#0070f3"))
         cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=9, leading=11)
         header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=10, bold=True, textColor=colors.white)
 
-        story.append(Paragraph(parsed_data.table_title or "Extracted Financial Report", title_style))
+        story.append(Paragraph(parsed_data.table_title or "Extracted Report", title_style))
         story.append(Spacer(1, 10))
-        
         table_data = [[Paragraph(f"<b>{h}</b>", header_style) for h in headers]]
         for row in raw_rows:
             table_data.append([Paragraph(str(cell), cell_style) for cell in row])
@@ -192,7 +165,6 @@ async def convert_image(
         pdf_table = Table(table_data, colWidths=[135, 135, 135, 135])
         pdf_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0070f3")),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('INNERGRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
             ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#0070f3")),
@@ -200,19 +172,12 @@ async def convert_image(
             ('TOPPADDING', (0,0), (-1,-1), 6),
             ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ]))
-        
         story.append(pdf_table)
         doc.build(story)
         pdf_buffer.seek(0)
-        
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=extracted_data.pdf"}
-        )
-    
+        return StreamingResponse(pdf_buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=extracted_data.pdf"})
     else:
-        raise HTTPException(status_code=400, detail="Unsupported output format requested.")
+        raise HTTPException(status_code=400, detail="Unsupported output format.")
 
 if __name__ == "__main__":
     import uvicorn
