@@ -38,6 +38,9 @@ export default function Home() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // CRITICAL: Reference to store the active abort controller
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (loading) {
@@ -55,17 +58,38 @@ export default function Home() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Fixed Reset Logic Handler on New Image Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      // 1. If there is an ongoing network request, kill it instantly!
+      if (abortControllerRef.current) {
+        console.log("🛑 [FRONTEND LOG] Aborting ongoing extraction for new image hot-swap.");
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
       setPreviewUrl(URL.createObjectURL(selectedFile));
-      setResultData(null); // Clear past results view
+      
+      // 2. Reset the layout states back to baseline
+      setResultData(null); 
+      setLoading(false);
     }
   };
 
   const handleConvertPipeline = async () => {
     if (!file) return;
+
+    // 1. Safety Check: If user clicks this while another one is running, abort the old one first
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // 2. Instantiate a fresh AbortController for this specific request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setResultData(null);
 
@@ -73,19 +97,30 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/convert', {
+      // Pass the signal token to the fetch operation
+      const response = await fetch('http://localhost:8000/api/convert', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
       if (!response.ok) throw new Error("Conversion processing failure.");
       const data: ApiResponse = await response.json();
       setResultData(data);
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore errors caused by our intentional abort commands
+      if (error.name === 'AbortError') {
+        console.log("ℹ️ [FRONTEND LOG] Request successfully aborted.");
+        return; 
+      }
       alert("Extraction encountered an issue. Please verify Ollama infrastructure.");
       console.error(error);
     } finally {
-      setLoading(false);
+      // Only clean up loading states if this specific controller wasn't aborted/replaced
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -107,7 +142,6 @@ export default function Home() {
 
     switch (downloadFormat) {
       case 'xlsx': {
-        // Build rows starting with headers array
         const worksheetData = [table.headers];
         table.rows.forEach(r => {
           worksheetData.push([r.column_a, r.column_b, r.column_c, r.column_d]);
@@ -138,12 +172,11 @@ export default function Home() {
         const doc = new jsPDF();
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
-        doc.setTextColor(30, 64, 175); // Professional Navy Blue
+        doc.setTextColor(30, 64, 175); 
         doc.text(table.table_title || "Extracted Financial Report", 14, 20);
         
         const tableBody = table.rows.map(r => [r.column_a, r.column_b, r.column_c, r.column_d]);
         
-        // Fixed calling convention passing the active document object explicitly
         autoTable(doc, {
           startY: 28,
           head: [table.headers],
@@ -208,13 +241,13 @@ export default function Home() {
           </div>
 
           <button 
-            onClick={handleConvertPipeline} disabled={loading || !file}
+            onClick={handleConvertPipeline} disabled={!file}
             style={{
-              backgroundColor: loading ? '#94a3b8' : !file ? '#e2e8f0' : '#10b981',
-              color: 'white', border: 'none', padding: '12px 24px', borderRadius: '6px', fontSize: '15px', fontWeight: '700', cursor: loading || !file ? 'not-allowed' : 'pointer'
+              backgroundColor: !file ? '#e2e8f0' : '#10b981',
+              color: 'white', border: 'none', padding: '12px 24px', borderRadius: '6px', fontSize: '15px', fontWeight: '700', cursor: !file ? 'not-allowed' : 'pointer'
             }}
           >
-            {loading ? 'Analyzing Array Structure...' : 'Extract & Analyze Document'}
+            {loading ? '🔄 Restarting/Processing Stream...' : 'Extract & Analyze Document'}
           </button>
         </div>
 
@@ -222,7 +255,7 @@ export default function Home() {
         {loading && (
           <div style={{ padding: '20px', backgroundColor: '#fffbeb', borderRadius: '8px', borderLeft: '5px solid #f59e0b', textAlign: 'center' }}>
             <span style={{ fontSize: '24px', fontWeight: '800', fontFamily: 'monospace', color: '#b45309' }}>⏱️ Run Execution Clock: {formatTime(timer)}</span>
-            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#78350f' }}>Ollama is running internal matrix calculations. Keeping window link pipeline connection thread alive.</p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#78350f' }}>Ollama is running internal matrix calculations. Choosing a new file will immediately cancel this processing run.</p>
           </div>
         )}
 
@@ -230,7 +263,7 @@ export default function Home() {
         {resultData && !loading && (
           <div style={{ display: 'grid', gridTemplateColumns: 'window.innerWidth > 900 ? "350px 1fr" : "1fr"', gap: '30px' }}>
             
-            {/* LEFT: Image verification preview sticky frame boundary element */}
+            {/* LEFT: Image verification preview element */}
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', height: 'fit-content' }}>
               <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#475569', textTransform: 'uppercase' }}>Source Verification File Image</h4>
               {previewUrl && <img src={previewUrl} alt="source" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #e2e8f0' }} />}
@@ -239,7 +272,7 @@ export default function Home() {
             {/* RIGHT: Tabbed Workspace Window Panel */}
             <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               
-              {/* Tab Navigation header bar option wrapper elements layout */}
+              {/* Tab Navigation header bar wrapper */}
               <div style={{ backgroundColor: '#f1f5f9', padding: '12px 20px 0 20px', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', gap: '10px' }}>
                 <div style={{ display: 'flex', gap: '5px' }}>
                   <button 
@@ -285,7 +318,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Dynamic View Body Window Box Switch Case Handling Rendering */}
+              {/* Dynamic View Body Window Box Handling Rendering */}
               <div style={{ padding: '24px', flex: 1, minHeight: '350px', overflowY: 'auto' }}>
                 {activeTab === 'table' ? (
                   <div>
