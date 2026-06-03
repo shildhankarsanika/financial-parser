@@ -2,7 +2,7 @@ import os
 import json
 import base64
 import sys
-from typing import List
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,16 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class DataRow(BaseModel):
-    column_a: str = Field(description="Item name, description, or row header.")
-    column_b: str = Field(description="Second column data (Value/Amount). Empty if none.")
-    column_c: str = Field(description="Third column data if present. Empty if none.")
-    column_d: str = Field(description="Fourth column data if present. Empty if none.")
-
-class ExtractedTable(BaseModel):
+class DynamicTable(BaseModel):
     table_title: str = Field(description="Title of the sheet or report")
-    headers: List[str] = Field(description="List of detected column headers")
-    rows: List[DataRow]
+    headers: List[str] = Field(description="List of detected column headers. Match the columns found in the image exactly.")
+    rows: List[List[str]] = Field(description="Each row is an array of strings representing the data for each column. The length of this array must match the length of the headers array exactly.")
 
 client = OpenAI(
     base_url=os.getenv("OPEN_SOURCE_BASE_URL", "http://localhost:11434/v1"),
@@ -51,7 +45,7 @@ async def convert_image(file: UploadFile = File(...)):
 
     model_name = os.getenv("OPEN_SOURCE_MODEL", "qwen2.5vl:7b")
 
-    # 1. Fetch Natural Reading Text for Copying/Viewing
+    # 1. Fetch Natural Reading Text
     print("📝 [TXT ENGINE] Generating raw document transcription...", flush=True)
     try:
         text_response = client.chat.completions.create(
@@ -60,7 +54,7 @@ async def convert_image(file: UploadFile = File(...)):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Transcribe all the text found in this image naturally exactly as it reads. Just output the clean continuous text line-by-line as read from left to right without markdown tables."},
+                        {"type": "text", "text": "Transcribe all the text found in this image naturally exactly as it reads line-by-line from left to right without markdown tables."},
                         {"type": "image_url", "image_url": {"url": image_url}}
                     ]
                 }
@@ -72,8 +66,8 @@ async def convert_image(file: UploadFile = File(...)):
         print(f"❌ Text branch failed: {str(e)}")
         extracted_text_string = "Failed to extract clean text stream."
 
-    # 2. Fetch Tabular Schema Layout
-    print("📊 [TABLE ENGINE] Parsing structure into JSON mapping...", flush=True)
+    # 2. Fetch Dynamic Tabular Schema Layout - STRATEGIC FIX APPLIED HERE
+    print("📊 [TABLE ENGINE] Parsing fluid matrix column mapping...", flush=True)
     try:
         table_response = client.chat.completions.create(
             model=model_name,
@@ -84,9 +78,14 @@ async def convert_image(file: UploadFile = File(...)):
                         {
                             "type": "text", 
                             "text": (
-                                "Extract all details into rows. Map headers to the 'headers' array. "
-                                "For every row under those headers, fill in column_a, column_b, column_c, and column_d. "
-                                'Return format: {"table_title": "Extracted Data", "headers": ["Col1", "Col2"], "rows": [{"column_a": "val", "column_b": "val", "column_c": "val", "column_d": "val"}]}'
+                                "You are an expert financial data parser. Extract EVERY piece of information from this financial/balance statement into a clean structured grid matrix.\n\n"
+                                "CRITICAL RULES FOR EXTRACTION:\n"
+                                "1. Identify the structural columns. For vertical balance sheets, this is typically standard items and their numerical values (e.g., ['Line Item / Account Description', 'Amount']).\n"
+                                "2. DO NOT mash different vertical sections (like Assets and Liabilities) side-by-side into a single row if they are stacked vertically in the image. Extract them line-by-line as they appear sequentially.\n"
+                                "3. Include headers, section titles (like 'Asset' or 'Liabilities'), individual account rows, and totals rows. Do not drop or ignore any line item or balance amount.\n"
+                                "4. Ensure that every item lines up exactly with its correct corresponding value in that row.\n\n"
+                                'Expected JSON Structure format example:\n'
+                                '{"table_title": "Balance Sheet Summary", "headers": ["Financial Element", "Value"], "rows": [["Asset", ""], ["Cash & cash equivalent", "$25,913"], ["Total asset", "$70,257"], ["Liabilities", ""], ["Accounts payable", "$55,888"]]}'
                             )
                         },
                         {"type": "image_url", "image_url": {"url": image_url}}
@@ -100,9 +99,12 @@ async def convert_image(file: UploadFile = File(...)):
         table_data = json.loads(raw_json)
     except Exception as e:
         print(f"❌ Grid branch failed: {str(e)}")
-        table_data = {"table_title": "Error Processing", "headers": ["Status"], "rows": [{"column_a": "Could not build structured grid grid structure"}]}
+        table_data = {
+            "table_title": "Error Processing", 
+            "headers": ["Error Logs Summary"], 
+            "rows": [["Could not build dynamic layout automatically."]]
+        }
 
-    # Return both pieces of data back together
     return {
         "raw_text": extracted_text_string,
         "structured_table": table_data

@@ -1,22 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-// Import browser formatting dependencies
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable'; 
 
-interface RowData {
-  column_a: string;
-  column_b: string;
-  column_c: string;
-  column_d: string;
-}
-
 interface TableStructure {
   table_title: string;
   headers: string[];
-  rows: RowData[];
+  rows: string[][]; // Fluid dynamic array matrix string rows
 }
 
 interface ApiResponse {
@@ -33,13 +25,10 @@ export default function Home() {
   const [copied, setCopied] = useState<boolean>(false);
   const [downloadFormat, setDownloadFormat] = useState<string>('xlsx');
   
-  // App Extraction Results State Holder
   const [resultData, setResultData] = useState<ApiResponse | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // CRITICAL: Reference to store the active abort controller
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -58,12 +47,9 @@ export default function Home() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Fixed Reset Logic Handler on New Image Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      // 1. If there is an ongoing network request, kill it instantly!
       if (abortControllerRef.current) {
-        console.log("🛑 [FRONTEND LOG] Aborting ongoing extraction for new image hot-swap.");
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
@@ -72,7 +58,6 @@ export default function Home() {
       setFile(selectedFile);
       setPreviewUrl(URL.createObjectURL(selectedFile));
       
-      // 2. Reset the layout states back to baseline
       setResultData(null); 
       setLoading(false);
     }
@@ -81,12 +66,10 @@ export default function Home() {
   const handleConvertPipeline = async () => {
     if (!file) return;
 
-    // 1. Safety Check: If user clicks this while another one is running, abort the old one first
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
 
-    // 2. Instantiate a fresh AbortController for this specific request
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -97,7 +80,6 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      // Pass the signal token to the fetch operation
       const response = await fetch('http://localhost:8000/api/convert', {
         method: 'POST',
         body: formData,
@@ -108,15 +90,12 @@ export default function Home() {
       const data: ApiResponse = await response.json();
       setResultData(data);
     } catch (error: any) {
-      // Ignore errors caused by our intentional abort commands
       if (error.name === 'AbortError') {
-        console.log("ℹ️ [FRONTEND LOG] Request successfully aborted.");
         return; 
       }
       alert("Extraction encountered an issue. Please verify Ollama infrastructure.");
       console.error(error);
     } finally {
-      // Only clean up loading states if this specific controller wasn't aborted/replaced
       if (abortControllerRef.current === controller) {
         setLoading(false);
         abortControllerRef.current = null;
@@ -131,7 +110,6 @@ export default function Home() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- CLIENT-SIDE FORMAT COMPILER ENGINE DRIVERS ---
   const handleDownloadFile = () => {
     if (!resultData) return;
     
@@ -142,11 +120,7 @@ export default function Home() {
 
     switch (downloadFormat) {
       case 'xlsx': {
-        const worksheetData = [table.headers];
-        table.rows.forEach(r => {
-          worksheetData.push([r.column_a, r.column_b, r.column_c, r.column_d]);
-        });
-        
+        const worksheetData = [table.headers, ...table.rows];
         const workbook = XLSX.utils.book_new();
         const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
         XLSX.utils.book_append_sheet(workbook, worksheet, "Extracted Data");
@@ -157,7 +131,8 @@ export default function Home() {
       case 'csv': {
         const csvRows = [table.headers.join(',')];
         table.rows.forEach(r => {
-          csvRows.push([`"${r.column_a}"`, `"${r.column_b}"`, `"${r.column_c}"`, `"${r.column_d}"`].join(','));
+          const escapedRow = r.map(cell => `"${String(cell).replace(/"/g, '""')}"`);
+          csvRows.push(escapedRow.join(','));
         });
         const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -171,16 +146,14 @@ export default function Home() {
       case 'pdf': {
         const doc = new jsPDF();
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(16);
+        doc.setFontSize(14);
         doc.setTextColor(30, 64, 175); 
         doc.text(table.table_title || "Extracted Financial Report", 14, 20);
-        
-        const tableBody = table.rows.map(r => [r.column_a, r.column_b, r.column_c, r.column_d]);
         
         autoTable(doc, {
           startY: 28,
           head: [table.headers],
-          body: tableBody,
+          body: table.rows,
           theme: 'striped',
           headStyles: { fillColor: [30, 64, 175] },
           styles: { font: "helvetica", fontSize: 9, cellPadding: 4 },
@@ -335,12 +308,13 @@ export default function Home() {
                           </tr>
                         </thead>
                         <tbody>
-                          {resultData.structured_table.rows.map((row, idx) => (
-                            <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                              <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>{row.column_a}</td>
-                              <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>{row.column_b}</td>
-                              <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>{row.column_c}</td>
-                              <td style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>{row.column_d}</td>
+                          {resultData.structured_table.rows.map((row, rowIdx) => (
+                            <tr key={rowIdx} style={{ backgroundColor: rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                              {row.map((cellValue, cellIdx) => (
+                                <td key={cellIdx} style={{ padding: '10px 12px', border: '1px solid #e2e8f0' }}>
+                                  {cellValue}
+                                </td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
